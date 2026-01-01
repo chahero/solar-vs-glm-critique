@@ -1,4 +1,4 @@
-# LayerNorm Similarity: Additional Experiments
+# solar vs glm: Additional Experiments
 
 ## 📋 실험 결과 요약
 
