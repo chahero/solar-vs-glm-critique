@@ -311,10 +311,4 @@ solar-vs-glm-critique/
 - **solar-vs-glm**: https://github.com/sionic-ai/solar-vs-glm
 - **solar-vs-glm-vs-phi**: https://github.com/hyunwoongko/solar-vs-glm-vs-phi
 
----
-
-## 라이선스
-
-이 코드는 교육 및 연구 목적으로 자유롭게 사용 가능합니다.
-
 
