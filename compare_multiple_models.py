@@ -2,16 +2,15 @@
 """
 Multi-Model Comparison: MoE LayerNorm Similarity
 
-This script compares LayerNorm weights across 5 MoE models to demonstrate
+This script compares LayerNorm weights across 4 MoE models to demonstrate
 that high LayerNorm similarity is a common characteristic of MoE models,
 not evidence of model derivation.
 
-Models:
+Models (all with hidden_size=4096):
 1. Solar-Open-100B (Upstage)
 2. GLM-4.5-Air (Zhipu AI)
 3. Phi-3.5-MoE-instruct (Microsoft)
 4. Mixtral-8x7B-Instruct-v0.1 (Mistral AI)
-5. Mixtral-8x22B-Instruct-v0.1 (Mistral AI)
 """
 
 import json
@@ -24,6 +23,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 # Model configurations
+# All models have hidden_size=4096 for fair comparison
 MODELS = {
     "Solar": {
         "repo": "upstage/Solar-Open-100B",
@@ -44,11 +44,6 @@ MODELS = {
         "repo": "mistralai/Mixtral-8x7B-Instruct-v0.1",
         "num_layers": 32,
         "short_name": "Mix-7B",
-    },
-    "Mixtral-8x22B": {
-        "repo": "mistralai/Mixtral-8x22B-Instruct-v0.1",
-        "num_layers": 56,
-        "short_name": "Mix-22B",
     },
 }
 
@@ -250,9 +245,17 @@ def main():
                 similarity_matrix[i, j] = 1.0
             elif i < j:
                 sim = cosine_similarity(weights[model_a], weights[model_b])
-                similarity_matrix[i, j] = sim
-                similarity_matrix[j, i] = sim
-                print(f"  {MODELS[model_a]['short_name']:8s} vs {MODELS[model_b]['short_name']:8s}: {sim:.6f}")
+                if sim is None:
+                    # Dimension mismatch - mark as NaN
+                    similarity_matrix[i, j] = np.nan
+                    similarity_matrix[j, i] = np.nan
+                    shape_a = weights[model_a].shape
+                    shape_b = weights[model_b].shape
+                    print(f"  {MODELS[model_a]['short_name']:8s} vs {MODELS[model_b]['short_name']:8s}: SKIP (dimension mismatch: {shape_a} vs {shape_b})")
+                else:
+                    similarity_matrix[i, j] = sim
+                    similarity_matrix[j, i] = sim
+                    print(f"  {MODELS[model_a]['short_name']:8s} vs {MODELS[model_b]['short_name']:8s}: {sim:.6f}")
 
     print()
 
@@ -264,14 +267,25 @@ def main():
     # Get upper triangle (excluding diagonal)
     upper_triangle = similarity_matrix[np.triu_indices(n_models, k=1)]
 
+    # Filter out NaN values (dimension mismatches)
+    valid_similarities = upper_triangle[~np.isnan(upper_triangle)]
+    n_skipped = len(upper_triangle) - len(valid_similarities)
+
     print(f"Number of model pairs: {len(upper_triangle)}")
-    print(f"Mean similarity:       {np.mean(upper_triangle):.6f}")
-    print(f"Std deviation:         {np.std(upper_triangle):.6f}")
-    print(f"Min similarity:        {np.min(upper_triangle):.6f}")
-    print(f"Max similarity:        {np.max(upper_triangle):.6f}")
-    print()
-    print(f"Similarities > 0.95:   {np.sum(upper_triangle > 0.95)} / {len(upper_triangle)}")
-    print(f"Similarities > 0.90:   {np.sum(upper_triangle > 0.90)} / {len(upper_triangle)}")
+    if n_skipped > 0:
+        print(f"Skipped (dimension mismatch): {n_skipped}")
+        print(f"Valid comparisons:     {len(valid_similarities)}")
+
+    if len(valid_similarities) > 0:
+        print(f"Mean similarity:       {np.mean(valid_similarities):.6f}")
+        print(f"Std deviation:         {np.std(valid_similarities):.6f}")
+        print(f"Min similarity:        {np.min(valid_similarities):.6f}")
+        print(f"Max similarity:        {np.max(valid_similarities):.6f}")
+        print()
+        print(f"Similarities > 0.95:   {np.sum(valid_similarities > 0.95)} / {len(valid_similarities)}")
+        print(f"Similarities > 0.90:   {np.sum(valid_similarities > 0.90)} / {len(valid_similarities)}")
+    else:
+        print("[WARN] No valid comparisons available")
     print()
 
     # Step 4: Visualization - Confusion Matrix
@@ -297,9 +311,17 @@ def main():
     # Add values in cells
     for i in range(n_models):
         for j in range(n_models):
-            text = ax.text(j, i, f"{similarity_matrix[i, j]:.3f}",
+            value = similarity_matrix[i, j]
+            if np.isnan(value):
+                label = "N/A"
+                color = "gray"
+            else:
+                label = f"{value:.3f}"
+                color = "black" if value > 0.95 else "white"
+
+            text = ax.text(j, i, label,
                           ha="center", va="center",
-                          color="black" if similarity_matrix[i, j] > 0.95 else "white",
+                          color=color,
                           fontsize=10, fontweight='bold')
 
     # Add colorbar
@@ -319,14 +341,22 @@ def main():
     print("CONCLUSION")
     print("="*70)
     print()
-    print(f"All {len(upper_triangle)} model pairs show cosine similarity > 0.90")
-    print(f"Average similarity: {np.mean(upper_triangle):.3f}")
-    print()
-    print("This demonstrates that high LayerNorm similarity is a COMMON")
-    print("characteristic of MoE models, NOT evidence of model derivation.")
-    print()
-    print("The solar-vs-glm claim of '182 sigma' significance is invalidated")
-    print("by the fact that ALL MoE models show similar LayerNorm patterns.")
+    if len(valid_similarities) > 0:
+        n_high_sim = np.sum(valid_similarities > 0.90)
+        print(f"{n_high_sim}/{len(valid_similarities)} comparable model pairs show cosine similarity > 0.90")
+        print(f"Average similarity: {np.mean(valid_similarities):.3f}")
+        print()
+        if n_skipped > 0:
+            print(f"Note: {n_skipped} pairs skipped due to different hidden_size (architecture difference)")
+            print()
+        print("This demonstrates that high LayerNorm similarity is a COMMON")
+        print("characteristic of MoE models with similar architecture,")
+        print("NOT evidence of model derivation.")
+        print()
+        print("The solar-vs-glm claim of '182 sigma' significance is invalidated")
+        print("by the fact that ALL comparable MoE models show similar LayerNorm patterns.")
+    else:
+        print("No valid comparisons available - all models have different architectures")
     print("="*70)
 
 

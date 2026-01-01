@@ -11,13 +11,6 @@ env/
 ENV/
 .venv
 
-# Experiment results
-results/
-*.png
-*.jpg
-*.jpeg
-*.pdf
-
 # Downloaded model weights cache
 cache/
 
