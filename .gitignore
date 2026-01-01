@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# Experiment results
+results/
+*.png
+*.jpg
+*.jpeg
+*.pdf
+
+# Downloaded model weights cache
+cache/
+
+# Data files
+*.npy
+*.npz
+*.pkl
+*.h5
+*.hdf5
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.cache
+
+# 
+solar-vs-glm/
+solar-vs-glm-vs-phi/
