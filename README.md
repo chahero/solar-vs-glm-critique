@@ -74,6 +74,27 @@ Solar와 GLM 외에 독립적으로 개발된 다른 MoE 모델들(Phi-3.5-MoE, 
 
 MoE와 non-MoE 모델을 모두 포함하여, 높은 LayerNorm 유사도가 MoE 아키텍처에 특화된 현상인지, 또는 같은 hidden_size를 가진 모델들의 일반적 특성인지 추가 데이터를 제공합니다.
 
+### 실험 6: 메트릭 비교 (Cosine vs Pearson vs L2)
+
+Cosine similarity는 벡터의 "방향"만 측정하므로, LayerNorm 가중치가 전반적으로 1 근처 양수인 경우 유사도가 과하게 높아질 수 있습니다. 이 실험은 다음을 추가로 측정합니다:
+
+- **Pearson Correlation** (Centered Cosine): 평균을 제거한 후 패턴 유사도 측정
+- **L2 Distance**: 절대적인 거리 측정
+- **Random Baseline**: 4096차원 랜덤 벡터의 기대 유사도
+
+이를 통해 높은 Cosine similarity가 "메트릭 특성 때문인지" vs "실제 패턴 유사성인지" 구분할 수 있습니다.
+
+#### 핵심 발견
+
+| 비교 유형 | Cosine | Pearson | 해석 |
+|-----------|--------|---------|------|
+| Layer 0 vs 10 (within-model) | 0.37 | 0.04~0.05 | Layer 0은 실제로 다름 (outlier) |
+| Layer 10 vs 20 (within-model) | 0.99 | 0.46~0.77 | 실제 패턴 유사성 있음 |
+| Solar vs GLM (cross-model) | 0.98 | 0.009 | Random 수준, 실제 유사성 없음 |
+| Random Baseline | 0.99 | 0.0007 | 기준선 |
+
+**결론**: Within-model 인접 레이어는 Cosine과 Pearson 모두 높아 실제 유사성이 있지만, Cross-model(Solar vs GLM)은 Cosine만 높고 Pearson은 Random 수준으로 실제 패턴 유사성이 없음을 보여줍니다.
+
 ---
 
 ## 모델 선택 기준
@@ -248,6 +269,9 @@ Difference (Layer 0 vs cross):  ~0.60
 **전체 9개 모델 유사도 매트릭스**
 ![Full Heatmap](results/exp5_full_heatmap.png)
 
+**실험 6: 메트릭 비교 (Cosine vs Pearson)**
+![Metric Comparison](results/exp6_metric_comparison.png)
+
 ---
 
 ## 파일 구조
@@ -256,7 +280,7 @@ Difference (Layer 0 vs cross):  ~0.60
 solar-vs-glm-critique/
 ├── .gitignore                   # Git ignore 설정
 ├── README.md                    # 이 파일
-├── compare_baselines.py         # 메인 실험 스크립트 (5개 실험 포함)
+├── compare_baselines.py         # 메인 실험 스크립트 (6개 실험 포함)
 ├── cache/                       # 다운로드한 LayerNorm 캐시 (실행 후 생성)
 │   ├── upstage_Solar-Open-100B_layer0_input_layernorm.npy
 │   ├── zai-org_GLM-4.5-Air_layer0_input_layernorm.npy
@@ -269,7 +293,8 @@ solar-vs-glm-critique/
     ├── exp3_moe_heatmap.png     # 실험 3: MoE 모델 히트맵
     ├── exp4_multi_layer.png     # 실험 4: 레이어별 일관성
     ├── exp5_architecture_comparison.png  # 실험 5: 아키텍처 비교
-    └── exp5_full_heatmap.png    # 9개 모델 전체 히트맵
+    ├── exp5_full_heatmap.png    # 9개 모델 전체 히트맵
+    └── exp6_metric_comparison.png  # 실험 6: 메트릭 비교
 ```
 
 ---
@@ -284,6 +309,7 @@ solar-vs-glm-critique/
 - 인접 레이어 간 유사도의 일반적 범위
 - 독립적인 여러 모델들 간 LayerNorm 유사도의 분포
 - MoE와 non-MoE 모델 간 유사도 차이 여부
+- Cosine similarity와 Pearson correlation의 차이 (메트릭 특성 vs 실제 패턴)
 
 ### 이 실험이 확인하지 않는 것
 

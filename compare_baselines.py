@@ -239,6 +239,55 @@ def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     return np.dot(a_flat, b_flat) / (np.linalg.norm(a_flat) * np.linalg.norm(b_flat))
 
 
+def pearson_correlation(a: np.ndarray, b: np.ndarray) -> float:
+    """Compute Pearson correlation (centered cosine similarity)"""
+    a_flat = a.flatten()
+    b_flat = b.flatten()
+    a_centered = a_flat - np.mean(a_flat)
+    b_centered = b_flat - np.mean(b_flat)
+    return np.dot(a_centered, b_centered) / (np.linalg.norm(a_centered) * np.linalg.norm(b_centered))
+
+
+def l2_distance(a: np.ndarray, b: np.ndarray) -> float:
+    """Compute L2 (Euclidean) distance between two vectors"""
+    a_flat = a.flatten()
+    b_flat = b.flatten()
+    return np.linalg.norm(a_flat - b_flat)
+
+
+def compute_all_metrics(a: np.ndarray, b: np.ndarray) -> dict:
+    """Compute all similarity/distance metrics"""
+    return {
+        "cosine": cosine_similarity(a, b),
+        "pearson": pearson_correlation(a, b),
+        "l2": l2_distance(a, b),
+    }
+
+
+def random_baseline_similarity(dim: int = 4096, mean: float = 1.0, std: float = 0.1,
+                                n_trials: int = 100) -> dict:
+    """
+    Compute similarity metrics for random vectors centered around mean.
+    This establishes a baseline for what similarity we'd expect by chance.
+    """
+    cosines = []
+    pearsons = []
+    l2s = []
+
+    for _ in range(n_trials):
+        a = np.random.normal(mean, std, dim)
+        b = np.random.normal(mean, std, dim)
+        cosines.append(cosine_similarity(a, b))
+        pearsons.append(pearson_correlation(a, b))
+        l2s.append(l2_distance(a, b))
+
+    return {
+        "cosine": {"mean": np.mean(cosines), "std": np.std(cosines)},
+        "pearson": {"mean": np.mean(pearsons), "std": np.std(pearsons)},
+        "l2": {"mean": np.mean(l2s), "std": np.std(l2s)},
+    }
+
+
 def main():
     """Main experiment"""
     print("="*60)
@@ -470,6 +519,74 @@ def main():
         print(f"    MoE vs non-MoE:     {np.mean(moe_vs_nonmoe_sims):.4f} ± {np.std(moe_vs_nonmoe_sims):.4f} (n={len(moe_vs_nonmoe_sims)})")
     if nonmoe_vs_nonmoe_sims:
         print(f"    non-MoE vs non-MoE: {np.mean(nonmoe_vs_nonmoe_sims):.4f} ± {np.std(nonmoe_vs_nonmoe_sims):.4f} (n={len(nonmoe_vs_nonmoe_sims)})")
+
+    # Experiment 6: Metric Comparison (Cosine vs Pearson vs L2) + Random Baseline
+    print("\n[Experiment 6] Metric Comparison & Random Baseline")
+    print("-" * 60)
+
+    # 6-1: Random baseline - what similarity do we expect by chance?
+    print("\n  6-1. Random Baseline (4096-dim vectors, mean=1.0, std=0.1):")
+    random_results = random_baseline_similarity(dim=4096, mean=1.0, std=0.1, n_trials=1000)
+    print(f"    Cosine:  {random_results['cosine']['mean']:.4f} ± {random_results['cosine']['std']:.4f}")
+    print(f"    Pearson: {random_results['pearson']['mean']:.4f} ± {random_results['pearson']['std']:.4f}")
+    print(f"    L2:      {random_results['l2']['mean']:.4f} ± {random_results['l2']['std']:.4f}")
+
+    # Also test with actual LayerNorm statistics
+    # Get mean and std from actual LayerNorm weights
+    sample_weights = []
+    for model_name in ["Solar", "GLM"]:
+        w = weights.get(model_name)
+        if w is not None:
+            sample_weights.append(w.flatten())
+    if sample_weights:
+        actual_mean = np.mean([np.mean(w) for w in sample_weights])
+        actual_std = np.mean([np.std(w) for w in sample_weights])
+        print(f"\n  Actual LayerNorm stats: mean={actual_mean:.4f}, std={actual_std:.4f}")
+        random_results_actual = random_baseline_similarity(dim=4096, mean=actual_mean, std=actual_std, n_trials=1000)
+        print(f"  Random Baseline (using actual stats):")
+        print(f"    Cosine:  {random_results_actual['cosine']['mean']:.4f} ± {random_results_actual['cosine']['std']:.4f}")
+        print(f"    Pearson: {random_results_actual['pearson']['mean']:.4f} ± {random_results_actual['pearson']['std']:.4f}")
+        print(f"    L2:      {random_results_actual['l2']['mean']:.4f} ± {random_results_actual['l2']['std']:.4f}")
+
+    # 6-2: Compare metrics for key model pairs
+    print("\n  6-2. Metric Comparison for Model Pairs (Layer 10):")
+    metric_comparison = {}
+    key_pairs = [("Solar", "GLM"), ("Solar", "Phi"), ("GLM", "Mixtral")]
+
+    for model_a, model_b in key_pairs:
+        if model_a in weights and model_b in weights:
+            w_a = weights[model_a]
+            w_b = weights[model_b]
+            if w_a.flatten().shape == w_b.flatten().shape:
+                metrics = compute_all_metrics(w_a, w_b)
+                metric_comparison[(model_a, model_b)] = metrics
+                print(f"    {model_a:8s} vs {model_b:8s}: Cosine={metrics['cosine']:.4f}, Pearson={metrics['pearson']:.4f}, L2={metrics['l2']:.4f}")
+
+    # 6-3: Within-model metrics (Layer 10 vs 20)
+    print("\n  6-3. Within-model Metrics (Layer 10 vs 20):")
+    within_model_metrics = {}
+    for model_name in ["Solar", "GLM"]:
+        config = MOE_MODELS.get(model_name)
+        if config and 20 < config["num_layers"]:
+            w10 = get_layernorm_weight(config["repo"], 10, "input_layernorm")
+            w20 = get_layernorm_weight(config["repo"], 20, "input_layernorm")
+            if w10 is not None and w20 is not None:
+                metrics = compute_all_metrics(w10, w20)
+                within_model_metrics[model_name] = metrics
+                print(f"    {model_name:8s} L10 vs L20: Cosine={metrics['cosine']:.4f}, Pearson={metrics['pearson']:.4f}, L2={metrics['l2']:.4f}")
+
+    # 6-4: Layer 0 metrics (the outlier)
+    print("\n  6-4. Layer 0 Metrics (Layer 0 vs 10):")
+    layer0_metrics = {}
+    for model_name in ["Solar", "GLM"]:
+        config = MOE_MODELS.get(model_name)
+        if config:
+            w0 = get_layernorm_weight(config["repo"], 0, "input_layernorm")
+            w10 = get_layernorm_weight(config["repo"], 10, "input_layernorm")
+            if w0 is not None and w10 is not None:
+                metrics = compute_all_metrics(w0, w10)
+                layer0_metrics[model_name] = metrics
+                print(f"    {model_name:8s} L0 vs L10:  Cosine={metrics['cosine']:.4f}, Pearson={metrics['pearson']:.4f}, L2={metrics['l2']:.4f}")
 
     # Visualization - Individual images for each experiment
     print("\n[Generating visualizations...]")
@@ -726,6 +843,118 @@ def main():
     print("  Saved: results/exp5_full_heatmap.png")
 
     # ============================================================
+    # Experiment 6: Metric Comparison Visualization
+    # ============================================================
+    fig6_metric, axes6 = plt.subplots(1, 3, figsize=(15, 5))
+
+    # Panel 1: Cosine vs Pearson for model pairs
+    ax = axes6[0]
+    pair_labels = []
+    cosine_vals = []
+    pearson_vals = []
+    for (model_a, model_b), metrics in metric_comparison.items():
+        pair_labels.append(f"{model_a[:3]}-{model_b[:3]}")
+        cosine_vals.append(metrics['cosine'])
+        pearson_vals.append(metrics['pearson'])
+
+    x = np.arange(len(pair_labels))
+    width = 0.35
+    bars1 = ax.bar(x - width/2, cosine_vals, width, label='Cosine', color='#3498db', alpha=0.8)
+    bars2 = ax.bar(x + width/2, pearson_vals, width, label='Pearson', color='#e74c3c', alpha=0.8)
+    ax.set_ylabel('Similarity')
+    ax.set_title('Cross-Model: Cosine vs Pearson', fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels(pair_labels)
+    ax.set_ylim([0, 1.1])
+    ax.legend()
+    ax.grid(axis='y', alpha=0.3)
+    for bar in bars1:
+        ax.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.02, f'{bar.get_height():.2f}',
+                ha='center', va='bottom', fontsize=8)
+    for bar in bars2:
+        ax.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.02, f'{bar.get_height():.2f}',
+                ha='center', va='bottom', fontsize=8)
+
+    # Panel 2: Random baseline comparison
+    ax = axes6[1]
+    random_categories = ['Random\n(mean=1.0)', 'Actual\nModels']
+    cosine_random = random_results['cosine']['mean']
+    cosine_actual = np.mean(cosine_vals) if cosine_vals else 0
+    pearson_random = random_results['pearson']['mean']
+    pearson_actual = np.mean(pearson_vals) if pearson_vals else 0
+
+    x = np.arange(2)
+    width = 0.35
+    bars1 = ax.bar(x - width/2, [cosine_random, cosine_actual], width, label='Cosine', color='#3498db', alpha=0.8)
+    bars2 = ax.bar(x + width/2, [pearson_random, pearson_actual], width, label='Pearson', color='#e74c3c', alpha=0.8)
+    ax.set_ylabel('Similarity')
+    ax.set_title('Random vs Actual Models', fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels(random_categories)
+    ax.set_ylim([0, 1.1])
+    ax.legend()
+    ax.grid(axis='y', alpha=0.3)
+    for bar in bars1:
+        ax.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.02, f'{bar.get_height():.2f}',
+                ha='center', va='bottom', fontsize=9, fontweight='bold')
+    for bar in bars2:
+        ax.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.02, f'{bar.get_height():.2f}',
+                ha='center', va='bottom', fontsize=9, fontweight='bold')
+
+    # Panel 3: Layer 0 vs Within-model vs Cross-model
+    ax = axes6[2]
+    comparison_labels = ['Layer 0\nvs Layer 10', 'Layer 10\nvs Layer 20', 'Cross-Model\n(Solar-GLM)']
+    comparison_cosine = []
+    comparison_pearson = []
+
+    # Layer 0 metrics (average of Solar and GLM)
+    if layer0_metrics:
+        comparison_cosine.append(np.mean([m['cosine'] for m in layer0_metrics.values()]))
+        comparison_pearson.append(np.mean([m['pearson'] for m in layer0_metrics.values()]))
+    else:
+        comparison_cosine.append(0)
+        comparison_pearson.append(0)
+
+    # Within-model metrics
+    if within_model_metrics:
+        comparison_cosine.append(np.mean([m['cosine'] for m in within_model_metrics.values()]))
+        comparison_pearson.append(np.mean([m['pearson'] for m in within_model_metrics.values()]))
+    else:
+        comparison_cosine.append(0)
+        comparison_pearson.append(0)
+
+    # Cross-model (Solar-GLM)
+    if ("Solar", "GLM") in metric_comparison:
+        comparison_cosine.append(metric_comparison[("Solar", "GLM")]['cosine'])
+        comparison_pearson.append(metric_comparison[("Solar", "GLM")]['pearson'])
+    else:
+        comparison_cosine.append(0)
+        comparison_pearson.append(0)
+
+    x = np.arange(3)
+    width = 0.35
+    bars1 = ax.bar(x - width/2, comparison_cosine, width, label='Cosine', color='#3498db', alpha=0.8)
+    bars2 = ax.bar(x + width/2, comparison_pearson, width, label='Pearson', color='#e74c3c', alpha=0.8)
+    ax.set_ylabel('Similarity')
+    ax.set_title('Comparison Types: Cosine vs Pearson', fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels(comparison_labels, fontsize=9)
+    ax.set_ylim([0, 1.1])
+    ax.legend()
+    ax.grid(axis='y', alpha=0.3)
+    for bar in bars1:
+        ax.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.02, f'{bar.get_height():.2f}',
+                ha='center', va='bottom', fontsize=9, fontweight='bold')
+    for bar in bars2:
+        ax.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.02, f'{bar.get_height():.2f}',
+                ha='center', va='bottom', fontsize=9, fontweight='bold')
+
+    plt.tight_layout()
+    plt.savefig('results/exp6_metric_comparison.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    print("  Saved: results/exp6_metric_comparison.png")
+
+    # ============================================================
     # Summary: Combined 4-panel figure (for overview)
     # ============================================================
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
@@ -811,6 +1040,18 @@ def main():
     if nonmoe_vs_nonmoe_sims:
         print(f"8. non-MoE vs non-MoE (4096):        {np.mean(nonmoe_vs_nonmoe_sims):.3f} (n={len(nonmoe_vs_nonmoe_sims)})")
     print()
+    print("EXPERIMENT 6 - Metric Comparison:")
+    print(f"  Random Baseline (4096-dim, mean=1.0):")
+    print(f"    Cosine:  {random_results['cosine']['mean']:.4f}")
+    print(f"    Pearson: {random_results['pearson']['mean']:.4f}")
+    if metric_comparison:
+        solar_glm_metrics = metric_comparison.get(("Solar", "GLM"), {})
+        if solar_glm_metrics:
+            print(f"  Solar vs GLM:")
+            print(f"    Cosine:  {solar_glm_metrics['cosine']:.4f}")
+            print(f"    Pearson: {solar_glm_metrics['pearson']:.4f}")
+            print(f"    L2:      {solar_glm_metrics['l2']:.4f}")
+    print()
     print("OBSERVATIONS:")
     print(f"  - Layer 0 기준 유사도: {solar_baseline_mean:.3f}")
     print(f"  - 인접 레이어 유사도: {solar_fair_mean:.3f}")
@@ -823,6 +1064,8 @@ def main():
         print(f"  - MoE vs non-MoE (4096): {np.mean(moe_vs_nonmoe_sims):.3f}")
     if nonmoe_vs_nonmoe_sims:
         print(f"  - non-MoE vs non-MoE (4096): {np.mean(nonmoe_vs_nonmoe_sims):.3f}")
+    print(f"  - Random Baseline Cosine: {random_results['cosine']['mean']:.4f}")
+    print(f"  - Random Baseline Pearson: {random_results['pearson']['mean']:.4f}")
     print("="*60)
 
     # Save results as Markdown
@@ -914,6 +1157,58 @@ Layer 0을 기준으로 다른 레이어들과의 유사도를 측정한 결과�
 
 ---
 
+## 실험 6: 메트릭 비교 (Cosine vs Pearson vs L2)
+
+Cosine similarity만으로는 "방향" 유사도만 측정되어, 평균값(~1.0)의 영향을 받을 수 있습니다.
+Pearson correlation(centered cosine)과 L2 distance를 추가로 측정하여 비교합니다.
+
+### 6-1. 랜덤 Baseline
+
+4096차원의 랜덤 벡터(mean=1.0, std=0.1)로 기대되는 유사도입니다:
+
+| 메트릭 | 평균 | 표준편차 |
+|--------|------|----------|
+| Cosine | {random_results['cosine']['mean']:.4f} | {random_results['cosine']['std']:.4f} |
+| Pearson | {random_results['pearson']['mean']:.4f} | {random_results['pearson']['std']:.4f} |
+| L2 | {random_results['l2']['mean']:.4f} | {random_results['l2']['std']:.4f} |
+
+### 6-2. 모델 간 비교 (Layer 10)
+
+| 모델 쌍 | Cosine | Pearson | L2 |
+|---------|--------|---------|-----|
+"""
+    for (model_a, model_b), metrics in metric_comparison.items():
+        md_content += f"| {model_a} vs {model_b} | {metrics['cosine']:.4f} | {metrics['pearson']:.4f} | {metrics['l2']:.4f} |\n"
+
+    md_content += f"""
+### 6-3. Within-model 비교 (Layer 10 vs 20)
+
+| 모델 | Cosine | Pearson | L2 |
+|------|--------|---------|-----|
+"""
+    for model_name, metrics in within_model_metrics.items():
+        md_content += f"| {model_name} | {metrics['cosine']:.4f} | {metrics['pearson']:.4f} | {metrics['l2']:.4f} |\n"
+
+    md_content += f"""
+### 6-4. Layer 0 비교 (Layer 0 vs 10)
+
+| 모델 | Cosine | Pearson | L2 |
+|------|--------|---------|-----|
+"""
+    for model_name, metrics in layer0_metrics.items():
+        md_content += f"| {model_name} | {metrics['cosine']:.4f} | {metrics['pearson']:.4f} | {metrics['l2']:.4f} |\n"
+
+    md_content += f"""
+### 해석
+
+- **Cosine이 높고 Pearson도 높음**: 실제 패턴이 유사함
+- **Cosine이 높고 Pearson이 낮음**: 평균값(~1.0) 때문에 Cosine이 높아진 것
+- **Random baseline과 비교**: 실제 모델들의 유사도가 랜덤보다 유의미하게 높은지 확인
+
+![메트릭 비교](exp6_metric_comparison.png)
+
+---
+
 ## 결과 요약
 
 | 측정 항목 | 값 |
@@ -922,11 +1217,14 @@ Layer 0을 기준으로 다른 레이어들과의 유사도를 측정한 결과�
 | Layer 0 기준 유사도 (GLM) | {glm_baseline_mean:.4f} |
 | 인접 레이어 유사도 (Solar) | {solar_fair_mean:.4f} |
 | 인접 레이어 유사도 (GLM) | {glm_fair_mean:.4f} |
-| Solar vs GLM (Layer 10) | {cross_solar_glm:.4f} |
+| Solar vs GLM (Layer 10) Cosine | {cross_solar_glm:.4f} |
+| Solar vs GLM (Layer 10) Pearson | {metric_comparison[("Solar", "GLM")]["pearson"]:.4f} |
 | MoE 모델 간 평균 | {np.mean(valid_sims):.4f} |
 | MoE vs non-MoE 평균 | {f'{np.mean(moe_vs_nonmoe_sims):.4f}' if moe_vs_nonmoe_sims else 'N/A'} |
 | non-MoE vs non-MoE 평균 | {f'{np.mean(nonmoe_vs_nonmoe_sims):.4f}' if nonmoe_vs_nonmoe_sims else 'N/A'} |
 | 레이어별 유사도 표준편차 | {np.std(layer_averages):.4f} |
+| Random Baseline Cosine | {random_results['cosine']['mean']:.4f} |
+| Random Baseline Pearson | {random_results['pearson']['mean']:.4f} |
 
 ---
 

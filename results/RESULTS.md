@@ -1,19 +1,16 @@
 # LayerNorm 유사도 비교 실험 결과
 
-> 생성일시: 2026-01-02 00:22:32
+> 생성일시: 2026-01-02 17:22:30
 
 ## 개요
 
 Solar와 GLM 모델 간 LayerNorm 가중치 유사도를 다양한 조건에서 측정한 결과입니다.
 
-### 요약 결과
-![요약](summary_comparison.png)
+![실험 결과](baseline_comparison.png)
 
 ---
 
 ## 실험 1: Layer 0 기준 유사도
-
-![Layer 0 Outlier](exp1_layer0_outlier.png)
 
 Layer 0을 기준으로 다른 레이어들과의 유사도를 측정한 결과입니다.
 
@@ -26,8 +23,6 @@ Layer 0을 기준으로 다른 레이어들과의 유사도를 측정한 결과�
 
 ## 실험 2: 인접 레이어 간 유사도
 
-![Fair Baseline](exp2_fair_baseline.png)
-
 동일한 거리(10 레이어)를 가진 인접 레이어 쌍의 유사도입니다.
 
 | 모델 | Layer 10 vs 20 | Layer 20 vs 30 | 평균 |
@@ -38,8 +33,6 @@ Layer 0을 기준으로 다른 레이어들과의 유사도를 측정한 결과�
 ---
 
 ## 실험 3: MoE 모델 간 비교 (Layer 10)
-
-![MoE Heatmap](exp3_moe_heatmap.png)
 
 4개의 MoE 모델에서 동일 레이어의 LayerNorm 유사도입니다.
 
@@ -58,8 +51,6 @@ Layer 0을 기준으로 다른 레이어들과의 유사도를 측정한 결과�
 ---
 
 ## 실험 4: 레이어별 유사도 변화
-
-![Multi-layer Consistency](exp4_multi_layer.png)
 
 여러 레이어(5, 10, 15, 20, 25, 30)에서 MoE 모델 간 유사도 추이입니다.
 
@@ -81,8 +72,6 @@ Layer 0을 기준으로 다른 레이어들과의 유사도를 측정한 결과�
 
 ## 실험 5: 동일 hidden_size (4096) 비교
 
-![Architecture Comparison](exp5_architecture_comparison.png)
-
 동일 hidden_size(4096)를 가진 MoE와 non-MoE 모델 간 유사도 비교입니다.
 
 ### 비교 결과
@@ -95,11 +84,52 @@ Layer 0을 기준으로 다른 레이어들과의 유사도를 측정한 결과�
 
 **참고**: 모든 모델이 hidden_size=4096으로 동일하여 Cosine similarity 계산이 가능합니다.
 
-### 전체 모델 유사도 히트맵
+---
 
-![Full Heatmap](exp5_full_heatmap.png)
+## 실험 6: 메트릭 비교 (Cosine vs Pearson vs L2)
 
-9개 모델 전체의 유사도 매트릭스입니다. 흰색 구분선을 기준으로 좌상단이 MoE 모델 간, 우하단이 non-MoE 모델 간 유사도입니다.
+Cosine similarity만으로는 "방향" 유사도만 측정되어, 평균값(~1.0)의 영향을 받을 수 있습니다.
+Pearson correlation(centered cosine)과 L2 distance를 추가로 측정하여 비교합니다.
+
+### 6-1. 랜덤 Baseline
+
+4096차원의 랜덤 벡터(mean=1.0, std=0.1)로 기대되는 유사도입니다:
+
+| 메트릭 | 평균 | 표준편차 |
+|--------|------|----------|
+| Cosine | 0.9901 | 0.0002 |
+| Pearson | 0.0007 | 0.0150 |
+| L2 | 9.0468 | 0.0996 |
+
+### 6-2. 모델 간 비교 (Layer 10)
+
+| 모델 쌍 | Cosine | Pearson | L2 |
+|---------|--------|---------|-----|
+| Solar vs GLM | 0.9811 | 0.0092 | 17.1803 |
+| Solar vs Phi | 0.9776 | 0.0006 | 6.4785 |
+| GLM vs Mixtral | 0.9497 | -0.0057 | 75.2530 |
+
+### 6-3. Within-model 비교 (Layer 10 vs 20)
+
+| 모델 | Cosine | Pearson | L2 |
+|------|--------|---------|-----|
+| Solar | 0.9882 | 0.4567 | 6.0495 |
+| GLM | 0.9982 | 0.7720 | 9.9148 |
+
+### 6-4. Layer 0 비교 (Layer 0 vs 10)
+
+| 모델 | Cosine | Pearson | L2 |
+|------|--------|---------|-----|
+| Solar | 0.3731 | 0.0418 | 14.5038 |
+| GLM | 0.3758 | 0.0521 | 31.2930 |
+
+### 해석
+
+- **Cosine이 높고 Pearson도 높음**: 실제 패턴이 유사함
+- **Cosine이 높고 Pearson이 낮음**: 평균값(~1.0) 때문에 Cosine이 높아진 것
+- **Random baseline과 비교**: 실제 모델들의 유사도가 랜덤보다 유의미하게 높은지 확인
+
+![메트릭 비교](exp6_metric_comparison.png)
 
 ---
 
@@ -111,11 +141,14 @@ Layer 0을 기준으로 다른 레이어들과의 유사도를 측정한 결과�
 | Layer 0 기준 유사도 (GLM) | 0.3769 |
 | 인접 레이어 유사도 (Solar) | 0.9921 |
 | 인접 레이어 유사도 (GLM) | 0.9979 |
-| Solar vs GLM (Layer 10) | 0.9811 |
+| Solar vs GLM (Layer 10) Cosine | 0.9811 |
+| Solar vs GLM (Layer 10) Pearson | 0.0092 |
 | MoE 모델 간 평균 | 0.9639 |
 | MoE vs non-MoE 평균 | 0.9722 |
 | non-MoE vs non-MoE 평균 | 0.9738 |
 | 레이어별 유사도 표준편차 | 0.0161 |
+| Random Baseline Cosine | 0.9901 |
+| Random Baseline Pearson | 0.0007 |
 
 ---
 
