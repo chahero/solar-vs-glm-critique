@@ -1,8 +1,14 @@
-# solar vs glm: Additional Experiments
+# solar vs glm: 추가 실험
+
+## 업데이트
+
+원본 solar-vs-glm repository 원본이 사라져서 포크 떠놓은거 업로드 합니다.
+
 
 ## 📋 실험 결과 요약
 
 이 레포지토리는 solar-vs-glm 실험에 대한 **추가 실험**을 제공합니다.
+**solar-vs-glm**: https://github.com/sionic-ai/solar-vs-glm
 
 | 실험 | 결과 |
 |------|------|
