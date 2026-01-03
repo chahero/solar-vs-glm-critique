@@ -2,7 +2,7 @@
 
 ## 업데이트
 
-원본 solar-vs-glm repository 원본이 사라져서 포크 떠놓은거 업로드 합니다.
+solar-vs-glm repository 원본이 사라져서 포크 떠놓은거 업로드 합니다.
 
 
 ## 📋 실험 결과 요약
